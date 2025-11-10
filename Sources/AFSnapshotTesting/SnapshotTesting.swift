@@ -150,52 +150,85 @@ public extension XCTestCase {
                             throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).")
                         }
 
-                        let differenceCGImage = try ClusterKernelDifferenceImage(with: .init(metalSource: MSLClusterKernel))
+                        let differenceCGImage = try ClusterKernelDifferenceImage(with: .init(metalSource: MetalHeader + MSLClusterKernel))
                             .differenceImage(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, clusterSize: clusterSize, color: color)
                         let differenceImage = UIImage(cgImage: differenceCGImage)
                         try differenceImage.data()
                             .save(in: differenceURL)
 
                         throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
-                    default: break
+                    case .perceptualTollerance, .perceptualTollerance_v1, .perceptualTollerance_v2:
+                        var deltaE: Float
+                        var threshold: Int
+    
+                        switch strategy {
+                            case .perceptualTollerance(threshold: let threshold_value, deltaE: let value):
+                            threshold = threshold_value
+                            deltaE = value
+                        case .perceptualTollerance_v1(threshold: let threshold_value, perceptualPrecision: let perceptualPrecision):
+                            threshold = threshold_value
+                            deltaE = (1 - perceptualPrecision) * 100
+                        case .perceptualTollerance_v2(precission: let precission, perceptualPrecision: let perceptualPrecision):
+                            let pixelsCount = Float(referenceSnapshot.size.width * referenceSnapshot.size.height)
+                            let accepted = pixelsCount * precission
+                            threshold = Int(pixelsCount - (accepted >= 1.0 ? accepted : pixelsCount))
+                            deltaE = (1 - perceptualPrecision) * 100
+                        default:
+                            threshold = 0
+                            deltaE = 0
+                            fatalError("Other stategy should be throw or return")
+                        }
+                    
+                        let difference = try Snapshot.deltaDifference(prepareSnapshot, prepareReferenceSnapshot, deltaE)
+
+                        guard difference > threshold else { return }
+
+                        guard differenceRecord else {
+                            throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).")
+                        }
+
+                        let differenceCGImage = try DeltaKernelDifferenceImage(with: .init(metalSource: MetalHeader + MSLDeltaE2000KernelSafe))
+                            .differenceImage(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, tollerance: deltaE, color: color)
+                        let differenceImage = UIImage(cgImage: differenceCGImage)
+                        try differenceImage.data()
+                            .save(in: differenceURL)
+
+                        throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
+                    case .combined(threshold: let threshold, clusterSize: let clusterSize, deltaE: let deltaE):
+                        let combinedKernel = try ClusterKernel.init(
+                            with: Kernel.Configuration(
+                                metalSource: MetalHeader + deltaDiffTool(with: deltaE) + MSLClusterKernel
+                            )
+                        )
+
+                        let difference = try combinedKernel.difference(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, clusterSize: clusterSize)
+
+                        guard difference > threshold else { return }
+
+                        guard differenceRecord else {
+                            throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).")
+                        }
+
+                        let combinedDifferenceCGImage = try ClusterKernelDifferenceImage(
+                            with: Kernel.Configuration(
+                                metalSource: MetalHeader + deltaDiffTool(with: deltaE) + MSLClusterKernel
+                            )
+                        )
+                    
+                        let differenceCGImage = try combinedDifferenceCGImage.differenceImage(
+                            lhs: prepareSnapshot,
+                            rhs: prepareReferenceSnapshot,
+                            clusterSize: clusterSize,
+                            color: color
+                        )
+
+                        let differenceImage = UIImage(cgImage: differenceCGImage)
+                        try differenceImage.data()
+                            .save(in: differenceURL)
+
+                        throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
                 }
 
-                var deltaE: Float
-                var threshold: Int
-
-                switch strategy {
-                    case .perceptualTollerance(threshold: let threshold_value, deltaE: let value):
-                        threshold = threshold_value
-                        deltaE = value
-                    case .perceptualTollerance_v1(threshold: let threshold_value, perceptualPrecision: let perceptualPrecision):
-                        threshold = threshold_value
-                        deltaE = (1 - perceptualPrecision) * 100
-                    case .perceptualTollerance_v2(precission: let precission, perceptualPrecision: let perceptualPrecision):
-                        let pixelsCount = Float(referenceSnapshot.size.width * referenceSnapshot.size.height)
-                        let accepted = pixelsCount * precission
-                        threshold = Int(pixelsCount - (accepted >= 1.0 ? accepted : pixelsCount))
-                        deltaE = (1 - perceptualPrecision) * 100
-                    default:
-                        threshold = 0
-                        deltaE = 0
-                        fatalError("Other stategy should be throw or return")
-                }
-
-                let difference = try Snapshot.deltaDifference(prepareSnapshot, prepareReferenceSnapshot, deltaE)
-
-                guard difference > threshold else { return }
-
-                guard differenceRecord else {
-                    throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).")
-                }
-
-                let differenceCGImage = try DeltaKernelDifferenceImage(with: .init(metalSource: MSLDeltaE2000KernelSafe))
-                    .differenceImage(lhs: prepareSnapshot, rhs: prepareReferenceSnapshot, tollerance: deltaE, color: color)
-                let differenceImage = UIImage(cgImage: differenceCGImage)
-                try differenceImage.data()
-                    .save(in: differenceURL)
-
-                throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)")
             } catch {
                 XCTFail("Failed with error: \(error)", file: file, line: line)
             }
@@ -370,7 +403,7 @@ struct Snapshot {
         return UIGraphicsImageRenderer(size: size, format: format)
     }
 
-    private static let clusterKernel: ClusterKernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MSLClusterKernel))
+    private static let clusterKernel: ClusterKernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + NaiveDiffTool + MSLClusterKernel))
 
     static func clusterDifference(_ lhs: CGImage, _ rhs: CGImage, clusterSize: Int) throws -> Int {
         return try clusterKernel.difference(lhs: lhs, rhs: rhs, clusterSize: clusterSize)
@@ -382,7 +415,7 @@ struct Snapshot {
         return try naiveKernel.difference(lhs: lhs, rhs: rhs)
     }
 
-    private static let deltaKernel: DeltaKernel = try! DeltaKernel(with: Kernel.Configuration(metalSource: MSLDeltaE2000KernelSafe))
+    private static let deltaKernel: DeltaKernel = try! DeltaKernel(with: Kernel.Configuration(metalSource: MetalHeader + NaiveDiffTool + MSLDeltaE2000KernelSafe))
 
     static func deltaDifference(_ lhs: CGImage, _ rhs: CGImage, _ deltaE : Float) throws -> Int {
         return try deltaKernel.difference(lhs: lhs, rhs: rhs, tollerance: deltaE)
@@ -464,6 +497,7 @@ public struct MismatchColor {
 public enum Strategy {
     case naive(threshold: Int = 0)
     case cluster(threshold: Int = 0, clusterSize: Int = 1)
+    case combined(threshold: Int, clusterSize: Int, deltaE: Float)
 
     // DeltaE2000 tollerance
     case perceptualTollerance(threshold: Int = 0, deltaE: Float = 0.0)

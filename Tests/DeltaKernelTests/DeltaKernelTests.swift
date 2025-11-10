@@ -12,7 +12,7 @@ import Services
 @testable import AFSnapshotTesting
 
 final class DeltaKernelTests: XCTestCase {
-    let kernel = try! DeltaKernel(with: Kernel.Configuration(metalSource: MSLDeltaE2000KernelSafe))
+    let kernel = try! DeltaKernel(with: Kernel.Configuration(metalSource: MetalHeader + NaiveDiffTool + MSLDeltaE2000KernelSafe))
 
     func test_WithoutDifference() throws {
         let (lhs, rhs) = images(className: String(describing: type(of: self)))
@@ -25,6 +25,24 @@ final class DeltaKernelTests: XCTestCase {
 
         let difference_withoutTollerance = try kernel.difference(lhs: lhs, rhs: rhs, tollerance: 0.0)
         XCTAssertEqual(difference_withoutTollerance, 0)
+
+        // Combined kernel with 1 cluster should behave like just delta kernel
+
+        let combinedDifference_withTollerance = try ClusterKernel(
+            with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 1.0) + MSLClusterKernel)
+        ).difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference_withTollerance, 0)
+
+        let combinedDifference_withSmallTollerance = try ClusterKernel(
+            with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 0.00001) + MSLClusterKernel)
+        ).difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference_withSmallTollerance, 0)
+        
+
+        let combinedDifference_withoutTollerance = try ClusterKernel(
+            with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 0.0) + MSLClusterKernel)
+        ).difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference_withoutTollerance, 0)
     }
 
     func test_OneDifference() throws {
@@ -36,16 +54,26 @@ final class DeltaKernelTests: XCTestCase {
 
     func test_TwoDifference() throws {
         let (lhs, rhs) = images(className: String(describing: type(of: self)))
-        let difference = try kernel.difference(lhs: lhs, rhs: rhs, tollerance: 0.0)
         
+        let difference = try kernel.difference(lhs: lhs, rhs: rhs, tollerance: 0.0)
         XCTAssertEqual(difference, 2)
+
+        // Combined kernel with 1 cluster should behave like just delta kernel
+        let combinedDifference = try ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 0.0) + MSLClusterKernel))
+            .difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference, 2)
     }
 
     func test_ThreeDifference() throws {
         let (lhs, rhs) = images(className: String(describing: type(of: self)))
-        let difference = try kernel.difference(lhs: lhs, rhs: rhs, tollerance: 0.0)
         
+        let difference = try kernel.difference(lhs: lhs, rhs: rhs, tollerance: 0.0)
         XCTAssertEqual(difference, 3)
+
+        // Combined kernel with 1 cluster should behave like just delta kernel
+        let combinedDifference = try ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 0.0) + MSLClusterKernel))
+            .difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference, 3)
     }
 
     func test_FullDifference() throws {
@@ -59,6 +87,23 @@ final class DeltaKernelTests: XCTestCase {
         
         let difference_withMediumTollerance = try kernel.difference(lhs: lhs, rhs: rhs, tollerance: 20)
         XCTAssertEqual(difference_withMediumTollerance, 81)
+        
+        // Combined kernel with 1 cluster should behave like just delta kernel
+
+        let combinedDifference_withSmallTollerance = try ClusterKernel(
+            with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 0.0) + MSLClusterKernel)
+        ).difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference_withSmallTollerance, 81)
+        
+        let combinedDifference_withBigTollerance = try ClusterKernel(
+            with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 90) + MSLClusterKernel)
+        ).difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference_withBigTollerance, 0)
+        
+        let combinedDifference_withMediumTollerance = try ClusterKernel(
+            with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 20) + MSLClusterKernel)
+        ).difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference_withMediumTollerance, 81)
     }
 
     func test_FullDifference_WithSimilarColor() throws {

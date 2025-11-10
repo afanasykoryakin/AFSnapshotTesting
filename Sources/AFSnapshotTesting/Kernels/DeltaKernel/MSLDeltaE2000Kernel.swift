@@ -7,8 +7,6 @@
 // License: MIT License, https://github.com/afanasykoryakin/AFSnapshotTesting/blob/master/LICENSE
 
 let MSLDeltaE2000KernelSafe = """
-#include <metal_stdlib>
-using namespace metal;
 
 #define M_PI  3.14159265358979323846f
 #define M_PI_2 1.57079632679489661923f

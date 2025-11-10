@@ -12,13 +12,18 @@ import Services
 @testable import AFSnapshotTesting
 
 final class ClusterKernelTests_GradientColor: XCTestCase {
-    let kernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MSLClusterKernel))
+    let kernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + NaiveDiffTool + MSLClusterKernel))
+    let combinedKernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + deltaDiffTool(with: 0.0) + MSLClusterKernel))
 
     func testClusterKernelGradient_SameImages() throws {
         for deep in [1, 2, 3, 4, 5, 6, 7] {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: deep)
             XCTAssertEqual(difference, 0)
+
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: deep)
+            XCTAssertEqual(combinedDifference, 0)
         }
     }
 
@@ -26,6 +31,10 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
         let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
         let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: 1)
         XCTAssertEqual(difference, 2962440)
+        
+        // The combined kernel with zero tolerance should just be clusterKernel
+        let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: 1)
+        XCTAssertEqual(combinedDifference, 2962440)
     }
 
     func testClusterKernelGradient_BigClustersDifference() throws {
@@ -33,14 +42,23 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: deep)
             XCTAssertEqual(difference, 418571)
+            
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: deep)
+            XCTAssertEqual(combinedDifference, 418571)
         }
     }
 
     func testClusterKernelGradient_SpiderDifference() throws {
         for deep in [1, 2, 3, 4, 5, 6, 7] {
+            let expected = (347 * 1175) + (17 * 835) + (564 * 10) + 388
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: deep)
-            XCTAssertEqual(difference, (347 * 1175) + (17 * 835) + (564 * 10) + 388)
+            XCTAssertEqual(difference, expected)
+            
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: deep)
+            XCTAssertEqual(combinedDifference, expected)
         }
     }
 
@@ -49,6 +67,10 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
             XCTAssertEqual(difference, pair.value)
+            
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
+            XCTAssertEqual(combinedDifference, pair.value)
         }
     }
 
@@ -57,6 +79,10 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
             XCTAssertEqual(difference, pair.value)
+    
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
+            XCTAssertEqual(combinedDifference, pair.value)
         }
     }
 
@@ -65,6 +91,10 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
             XCTAssertEqual(difference, pair.value)
+            
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
+            XCTAssertEqual(combinedDifference, pair.value)
         }
     }
 
@@ -73,6 +103,10 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
             XCTAssertEqual(difference, pair.value)
+            
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
+            XCTAssertEqual(combinedDifference, pair.value)
         }
     }
 
@@ -81,6 +115,10 @@ final class ClusterKernelTests_GradientColor: XCTestCase {
             let (lhs, rhs) = images(className: String(describing: type(of: self)), referenceName: "BlueRedGradient")
             let difference = try kernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
             XCTAssertEqual(difference, pair.value)
+
+            // The combined kernel with zero tolerance should just be clusterKernel
+            let combinedDifference = try combinedKernel.difference(lhs: lhs, rhs: rhs, clusterSize: pair.key)
+            XCTAssertEqual(combinedDifference, pair.value)
         }
     }
 }

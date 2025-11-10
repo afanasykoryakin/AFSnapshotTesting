@@ -8,8 +8,6 @@
 //
 
 let MSLClusterKernel = """
-#include <metal_stdlib>
-using namespace metal;
 
 #define BUFFER_SIZE 100
 
@@ -64,8 +62,8 @@ void clusterSize_7(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
-            
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
+
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
                 
@@ -103,7 +101,7 @@ void clusterSize_6(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -143,7 +141,7 @@ void clusterSize_5(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -183,7 +181,7 @@ void clusterSize_4(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -223,7 +221,7 @@ void clusterSize_3(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -263,7 +261,7 @@ void clusterSize_2(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -303,7 +301,7 @@ void clusterSize_1(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -343,7 +341,7 @@ void clusterSize(texture2d<float, access::read> firstImage,
             float4 firstValue = firstImage.read(neighborPixel);
             float4 secondValue = secondImage.read(neighborPixel);
             
-            bool isPixelNotEqual = !((firstValue.r == secondValue.r) && (firstValue.g == secondValue.g) && (firstValue.b == secondValue.b) && (firstValue.a == secondValue.a));
+            bool isPixelNotEqual = !DIFF_FUNC(firstValue, secondValue);
             
             if (isPixelNotEqual) {
                 uint2 result = recursiveSearch(buffer, neighborPixel, 0);
@@ -373,7 +371,7 @@ kernel void clusterKernel(texture2d<float, access::read> inputImage1 [[texture(0
     float4 pixel1 = inputImage1.read(gid);
     float4 pixel2 = inputImage2.read(gid);
 
-    bool isPixelNotEqual = !((pixel1.r == pixel2.r) && (pixel1.g == pixel2.g) && (pixel1.b == pixel2.b) && (pixel1.a == pixel2.a));
+    bool isPixelNotEqual = !DIFF_FUNC(pixel1, pixel2);
 
     if (isPixelNotEqual) {
         int2 buffer[BUFFER_SIZE] = { }; recursiveFill(buffer, int2(-1, -1), 0);
@@ -404,7 +402,7 @@ kernel void clusterKernelTextureRecord(texture2d<float, access::read> inputImage
     float4 pixel1 = inputImage1.read(gid);
     float4 pixel2 = inputImage2.read(gid);
 
-    bool isPixelNotEqual = !((pixel1.r == pixel2.r) && (pixel1.g == pixel2.g) && (pixel1.b == pixel2.b) && (pixel1.a == pixel2.a));
+    bool isPixelNotEqual = !DIFF_FUNC(pixel1, pixel2);
 
     if (isPixelNotEqual) {
         int2 buffer[BUFFER_SIZE] = { }; recursiveFill(buffer, int2(-1, -1), 0);
@@ -425,4 +423,5 @@ kernel void clusterKernelTextureRecord(texture2d<float, access::read> inputImage
         outputImage.write(pixel1, gid);
     }
 }
+
 """

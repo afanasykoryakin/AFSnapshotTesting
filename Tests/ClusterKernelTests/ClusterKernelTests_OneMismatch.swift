@@ -12,7 +12,7 @@ import Services
 @testable import AFSnapshotTesting
 
 final class ClusterKernelTests_OneMismatch: XCTestCase {
-    let kernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MSLClusterKernel))
+    let kernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + NaiveDiffTool + MSLClusterKernel))
 
     func testClusterKernelWithOneMismatchPixel_DeepIsOne() throws {
         let (image1, image2) = images(className: String(describing: type(of: self)))
