@@ -17,6 +17,7 @@ public extension XCTestCase {
         _ view: UIView,
         on screen: SnapshotDevice,
         as strategy: Strategy = .naive(threshold: 0),
+        inDirectory directoryURL: URL? = nil,
         traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
@@ -30,6 +31,7 @@ public extension XCTestCase {
             view,
             on: (size: screen.size, scale: screen.scale),
             as: strategy,
+            inDirectory: directoryURL,
             traits: traits,
             record: record,
             differenceRecord: differenceRecord,
@@ -43,6 +45,7 @@ public extension XCTestCase {
     func assertSnapshot(
         _ view: UIView,
         as strategy: Strategy = .naive(threshold: 0),
+        inDirectory directoryURL: URL? = nil,
         traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
@@ -56,6 +59,7 @@ public extension XCTestCase {
             view,
             on: nil,
             as: strategy,
+            inDirectory: directoryURL,
             traits: traits,
             record: record,
             differenceRecord: differenceRecord,
@@ -70,6 +74,7 @@ public extension XCTestCase {
         _ view: UIView,
         on screen: (size: CGSize, scale: Int)?,
         as strategy: Strategy = .naive(threshold: 0),
+        inDirectory directoryURL: URL? = nil,
         traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
@@ -79,10 +84,31 @@ public extension XCTestCase {
         testName: String = #function,
         named: String? = nil
     ) {
+        let referenceDirectory = directoryURL ?? URL(fileURLWithPath: String(describing: file)).deletingLastPathComponent()
         let funcName = named ?? testName.replacingOccurrences(of: "()", with: "")
         let className = String(describing: type(of: self))
-        let referenceURL = Snapshot.createReferenceURL(name: funcName, class: className, file: file)
-        let differenceURL = Snapshot.createDifferenceImageURL(name: funcName, class: className, file: file)
+        let referenceURL = Snapshot.createReferenceURL(
+            name: funcName,
+            class: className,
+            inDirectory: referenceDirectory
+        )
+
+        let differenceDirectory: URL
+        if let artifactsUrl = ProcessInfo.processInfo.environment["SNAPSHOT_DIFF_ARTIFACTS"] {
+            guard let artifactsDirectory = URL(string: artifactsUrl) else {
+                return XCTFail("Failed to create diff image directory from environment for key 'SNAPSHOT_DIFF_ARTIFACTS'", file: file, line: line)
+            }
+
+            differenceDirectory = artifactsDirectory
+        } else {
+            differenceDirectory = referenceDirectory
+        }
+        
+        let differenceURL = Snapshot.createDifferenceImageURL(
+            name: funcName,
+            class: className,
+            inDirectory: differenceDirectory
+        )
 
         let referenceSnapshotDoesNotExist = !FileManager.default.fileExists(atPath: referenceURL.path)
 
@@ -313,18 +339,24 @@ enum SnapshotError: Error {
 
 @available(iOS 10.0, *)
 struct Snapshot {
-    static func createReferenceURL(name testName: String, class className: String, file: StaticString) -> URL {
-        URL(fileURLWithPath: String(describing: file))
-            .deletingLastPathComponent()
+    static func createReferenceURL(
+        name testName: String,
+        class className: String,
+        inDirectory directoryUrl: URL
+    ) -> URL {
+        directoryUrl
             .appendingPathComponent("Snapshots")
             .appendingPathComponent(className)
             .appendingPathComponent(testName)
             .appendingPathExtension("png")
     }
 
-    static func createDifferenceImageURL(name testName: String, class className: String, file: StaticString) -> URL {
-        URL(fileURLWithPath: String(describing: file))
-            .deletingLastPathComponent()
+    static func createDifferenceImageURL(
+        name testName: String,
+        class className: String,
+        inDirectory directoryUrl: URL
+    ) -> URL {
+        directoryUrl
             .appendingPathComponent("Difference")
             .appendingPathComponent(className)
             .appendingPathComponent(testName)
