@@ -121,7 +121,7 @@ public extension XCTestCase {
                 let prepareReferenceSnapshot = try Snapshot.normilize(cgImage: referenceSnapshotCGImage)
 
                 guard prepareSnapshot.width == prepareReferenceSnapshot.width, prepareSnapshot.height == prepareReferenceSnapshot.height else {
-                    throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. First size: \(prepareSnapshot.width) x \(prepareSnapshot.height), Second size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)")
+                    throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. render size: \(prepareSnapshot.width) x \(prepareSnapshot.height), reference size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)")
                 }
 
                 switch strategy {
@@ -328,6 +328,7 @@ struct Snapshot {
             .appendingPathComponent("Difference")
             .appendingPathComponent(className)
             .appendingPathComponent(testName)
+            .appendingPathExtension("diff")
             .appendingPathExtension("png")
     }
 
