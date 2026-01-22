@@ -82,7 +82,8 @@ public extension XCTestCase {
         file: StaticString = #file,
         line: UInt = #line,
         testName: String = #function,
-        named: String? = nil
+        named: String? = nil,
+        memcmpSpeed: Bool = false
     ) {
         let referenceDirectory = directoryURL ?? URL(fileURLWithPath: String(describing: file)).deletingLastPathComponent()
         let funcName = named ?? testName.replacingOccurrences(of: "()", with: "")
@@ -137,17 +138,38 @@ public extension XCTestCase {
                     throw SnapshotError.failedToCreateCGImage(snapshotName: "Render for process")
                 }
 
-                let prepareSnapshot = try Snapshot.normilize(cgImage: snapshotCGImage)
                 let referenceSnapshot = try Snapshot.createReferenceSnapshot(from: referenceURL)
 
                 guard let referenceSnapshotCGImage = referenceSnapshot.cgImage else {
                     throw SnapshotError.failedToCreateCGImage(snapshotName: referenceURL.lastPathComponent)
                 }
 
-                let prepareReferenceSnapshot = try Snapshot.normilize(cgImage: referenceSnapshotCGImage)
+                let prepareReferenceSnapshotContext = try Snapshot.normilize(cgImage: referenceSnapshotCGImage)
+                let prepareSnapshotContext = try Snapshot.normilize(cgImage: snapshotCGImage)
+
+                guard let prepareReferenceSnapshot = prepareReferenceSnapshotContext.makeImage() else {
+                    throw SnapshotError.failedToPrepareCGImage(description: "Failed to get reference CGImage from context")
+                }
+
+                guard let prepareSnapshot = prepareSnapshotContext.makeImage() else {
+                    throw SnapshotError.failedToPrepareCGImage(description: "Failed to get render CGImage from context")
+                }
 
                 guard prepareSnapshot.width == prepareReferenceSnapshot.width, prepareSnapshot.height == prepareReferenceSnapshot.height else {
                     throw SnapshotError.snapshotMismatch(description: "Snapshot size does not match. render size: \(prepareSnapshot.width) x \(prepareSnapshot.height), reference size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)")
+                }
+
+                if memcmpSpeed {
+                    guard let referenceData = prepareReferenceSnapshotContext.data, let renderData = prepareSnapshotContext.data else {
+                        throw SnapshotError.error(description: "Context data is error")
+                    }
+
+                    let pixelCount = prepareSnapshot.width * prepareSnapshot.height
+                    let byteCount = Snapshot.imageContextBytesPerPixel * pixelCount
+
+                    guard memcmp(referenceData, renderData, byteCount) != 0 else {
+                        return
+                    }
                 }
 
                 switch strategy {
@@ -436,6 +458,8 @@ struct Snapshot {
         return UIGraphicsImageRenderer(size: size, format: format)
     }
 
+    static let imageContextBytesPerPixel = 4
+
     private static let clusterKernel: ClusterKernel = try! ClusterKernel(with: Kernel.Configuration(metalSource: MetalHeader + NaiveDiffTool + MSLClusterKernel))
 
     static func clusterDifference(_ lhs: CGImage, _ rhs: CGImage, clusterSize: Int) throws -> Int {
@@ -455,10 +479,9 @@ struct Snapshot {
     }
 
     // remap colorspace
-    static func normilize(cgImage: CGImage) throws -> CGImage {
+    static func normilize(cgImage: CGImage) throws -> CGContext {
         let width = cgImage.width
         let height = cgImage.height
-        let imageContextBytesPerPixel = 4
         let bytesPerRow = width * imageContextBytesPerPixel
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
 
@@ -479,11 +502,7 @@ struct Snapshot {
 
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        guard let preparingCGImage = context.makeImage() else {
-            throw SnapshotError.failedToPrepareCGImage(description: "Failed to get CGImage from context")
-        }
-
-        return preparingCGImage
+        return context
     }
 }
 
