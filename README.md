@@ -1,16 +1,10 @@
 # AFSnapshotTesting
-Is the world's [fastest library](#1-the-fastest-in-the-world) for creating snapshot tests of your visual components. Its main distinguishing feature is the use of [Apple metal computed shaders](https://developer.apple.com/documentation/metal/performing-calculations-on-a-gpu) to enable high-performance parallel `GPU` image analysis algorithms.
+This is the fastest library for creating tests that capture snapshots of your visual components. By supporting the most advanced comparison algorithms and introducing its own innovative comparison methods, combined with highly flexible configuration options and algorithm-dependent diff images, it allows you to achieve near-pixel-perfect results and enhance your testing experience. Its main distinguishing feature is the use of [Apple metal computed shaders](https://developer.apple.com/documentation/metal/performing-calculations-on-a-gpu) to enable high-performance parallel `GPU` image analysis algorithms.
 
-- The library offers an alternative testing strategy, as outlined in [cluster analysis](#2-cluster-analysis) which includes a parallel implementation that provides a **200x speed** increase compared to traditional `CPU` implementations. 
-
-- The library also contains improved versions of popular testing strategies (deltaE2000).
-
-- Open unique opportunities such as creating an accurate difference image [difference image](#features), which helps to identify problem areas. The difference image is created depending on the chosen algorithm. 
-## Idea of ​​creation
-The idea for the library came from my work on particle simulation using Apple Metal. By that time, I already had experience developing an internal corporate tool for snapshot testing and had a solid understanding of the operational features of existing open-source solutions, their technical limitations, and the problems they were designed to solve.
-
-Having seen the impressive capabilities of Apple Metal for parallel processing of large volumes of data as particles and recognizing the potential to enhance existing approaches, a simple idea came to mind: to use pixels instead of particles.
 ## Example
+
+### 1. UIView
+
 ```swift
 import AFSnapshotTesting
 
@@ -32,14 +26,37 @@ class ExampleTests: XCTestCase {
 }
 ```
 
+### 2. UIImage
+
+```swift
+import AFSnapshotTesting
+
+class ExampleTests: XCTestCase {
+    func testImage() {
+        let image = UIImage(named: "example-image-from-resources")
+        assertSnapshot(image)
+    }
+}
+```
+
+### 3. XCUIElement
+
+```swift
+import AFSnapshotTesting
+
+class MainSteps: BaseSteps {
+    func assertSnapshotForPaymentSection() {
+        let paymentElement = mainScreen.paymentElement()
+        assertSnapshot(paymentElement)
+    }
+}
+```
+
 ## Installation
 ### Swift Package Manager
 ```swift
 dependencies: [
-    .package(
-        url: "https://github.com/afanasykoryakin/apple-metal-snapshot-testing",
-        from: "1.0.0"
-    )
+    .package(url: "https://github.com/afanasykoryakin/apple-metal-snapshot-testing")
 ]
 ```
 ## Features
@@ -160,6 +177,14 @@ Perceptual tolerance refers to an image comparison method that accounts for huma
 
 Perceptual tolerance-based algorithms [Delta E (CIE 2000)](http://www.brucelindbloom.com/index.html?Eqn_DeltaE_CIE2000.html) have become the industry standard for snapshot testing (thanks to PointFree's [swift-snapshot-testing](https://github.com/pointfreeco/swift-snapshot-testing)), allowing developers to minimize false positives caused by minor rendering differences across platforms. Given its widespread adoption, I have also implemented a similar algorithm. 
 
+| $\Delta E$ | Perception                              |
+| ---------- | --------------------------------------- |
+| <= 1.0     | Invisible to the human eye.       |
+| 1 - 2      | It is noticeable upon careful examination.  |
+| 2 - 10     | It's noticeable at first glance.              |
+| 11 - 49    | The colors are more similar than opposite. |
+| 100        | The colors are exactly the opposite              | 
+
 ```swift
 // PointFree SnapshotTesting:
 // precision: 0.999 - the image should match 99%, but this is a relative parameter that will cause difficulties
@@ -178,7 +203,16 @@ assertSnapshot(as: .perceptualTollerance(threshold: 10, deltaE: 1.0))
 // For full backwards compatibility for pointfree.
 assertSnapshot(as: .perceptualTollerance_v2(precission: 0.999, perceptualPrecision: 0.99))
 ```
-- 250% faster than pointfree
+#### 1.3 Combined strategy (clusters filter + Perceptual tollerance)
+The strategy allows you to lower the DeltaE threshold and filter out the remaining groups
+
+```swift
+case combined(threshold: Int, clusterSize: Int, deltaE: Float)
+// threshold: 10 - Ignore 10 pixels allright 
+// clusterSize: 5 - Min cluster size to count mismatches (smaller clusters ignored as noise)
+// deltaE: 2 - It is noticeable upon careful examination. (See table)
+assertSnapshot(view, as: .combined(threshold: 10, clusterSize: 5, deltaE: 5))  
+```
 ## Resume
 Thank you. my [tg](https://t.me/afanasykoryakin)
 ## License
