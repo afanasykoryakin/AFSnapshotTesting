@@ -82,6 +82,7 @@ extension XCTestCase {
         traits: [UITraitCollection]? = nil,
         record: Bool = false,
         differenceRecord: Bool = true,
+        failureRecord: Bool = false,
         color: MismatchColor = .green,
         file: StaticString = #file,
         line: UInt = #line,
@@ -98,6 +99,7 @@ extension XCTestCase {
                 inDirectory: directoryURL,
                 record: record,
                 differenceRecord: differenceRecord,
+                failureRecord: failureRecord,
                 file: file,
                 line: line,
                 testName: testName,
@@ -136,6 +138,22 @@ public func assertSnapshot(
     )
 }
 
+/// Performs a snapshot test comparing the provided `snapshot` against a reference image.
+///
+/// - Parameters:
+///   - snapshot: The UIImage to test against the reference snapshot.
+///   - screen: Optional size and scale tuple for rendering. If `nil`, the `UIView` own size
+///   - strategy: The comparison strategy.
+///   - directoryURL: The base directory where reference snapshots and diffs are stored. Defaults to the test file's parent directory.
+///   - record: If `true`, overwrites or creates a new reference snapshot regardless of existing ones. When used, the test passes.
+///   - differenceRecord: If `true`, saves a visual difference image (highlighting mismatches) to the "Difference" subdirectory when test fails. Default is `true`.
+///   - failureRecord: If `true`, records a new reference snapshot *only when the test would otherwise fail*, but does **not** fail the test itself. Useful for updating references during test development without marking tests as failing.
+///   - color: The color used to highlight mismatched pixels in the diff image. Default is `.green`.
+///   - testName: The name of the test method (usually `#function`).
+///   - className: The class name used to group snapshots and organize storage.
+///   - named: Optional custom snapshot name. If `nil`, the test name is used.
+///   - memcmpSpeed: If `true`, uses optimized memory comparison for quick equality checks before heavy image diffing.
+///
 public func assertSnapshot(
     _ snapshot: UIImage,
     on screen: (size: CGSize, scale: Int)?,
@@ -143,6 +161,7 @@ public func assertSnapshot(
     inDirectory directoryURL: URL? = nil,
     record: Bool = false,
     differenceRecord: Bool = true,
+    failureRecord: Bool = false,
     color: MismatchColor = .green,
     file: StaticString = #file,
     line: UInt = #line,
@@ -203,7 +222,9 @@ public func assertSnapshot(
                 throw SnapshotError.failedToCreateCGImage(snapshotName: "Render for process")
             }
             
-            let referenceSnapshot = try Snapshot.createReferenceSnapshot(from: referenceURL)
+            guard let referenceSnapshot = UIImage(contentsOfFile: referenceURL.path) else {
+                throw SnapshotError.referenceImageNotFound(snapshotName: referenceURL.lastPathComponent, capture: snapshotCGImage)
+            }
             
             guard let referenceSnapshotCGImage = referenceSnapshot.cgImage else {
                 throw SnapshotError.failedToCreateCGImage(snapshotName: referenceURL.lastPathComponent)
@@ -221,7 +242,7 @@ public func assertSnapshot(
             }
             
             guard prepareSnapshot.width == prepareReferenceSnapshot.width, prepareSnapshot.height == prepareReferenceSnapshot.height else {
-                throw SnapshotError.snapshotsSizeDoesNotEqual(description: "Snapshot size does not match. render size: \(prepareSnapshot.width) x \(prepareSnapshot.height), reference size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)")
+                throw SnapshotError.snapshotsSizeDoesNotEqual(description: "Snapshot size does not match. render size: \(prepareSnapshot.width) x \(prepareSnapshot.height), reference size: \(prepareReferenceSnapshot.width) x \(prepareReferenceSnapshot.height)", capture: snapshotCGImage)
             }
             
             if memcmpSpeed {
@@ -248,13 +269,23 @@ public func assertSnapshot(
                 let differenceImage = UIImage(cgImage: differenceCGImage)
                 
                 guard differenceRecord else {
-                    throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).", diff: differenceImage)
+                    throw SnapshotError.snapshotMismatch(
+                        description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).",
+                        diff: differenceImage,
+                        capture: prepareSnapshot,
+                        original: prepareReferenceSnapshot
+                    )
                 }
-                
+
                 try differenceImage.data()
                     .save(in: differenceURL)
                 
-                throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)", diff: differenceImage)
+                throw SnapshotError.snapshotMismatch(
+                    description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)",
+                    diff: differenceImage,
+                    capture: prepareSnapshot,
+                    original: prepareReferenceSnapshot
+                )
             case .cluster(threshold: let threshold, clusterSize: let clusterSize):
                 let difference = try Snapshot.clusterDifference(prepareSnapshot, prepareReferenceSnapshot, clusterSize: clusterSize)
                 
@@ -265,28 +296,45 @@ public func assertSnapshot(
                 let differenceImage = UIImage(cgImage: differenceCGImage)
                 
                 guard differenceRecord else {
-                    throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).", diff: differenceImage)
+                    throw SnapshotError.snapshotMismatch(
+                        description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).",
+                        diff: differenceImage,
+                        capture: prepareSnapshot,
+                        original: prepareReferenceSnapshot
+                    )
                 }
                 
                 try differenceImage.data()
                     .save(in: differenceURL)
                 
-                throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)", diff: differenceImage)
-            case .perceptualTollerance, .perceptualTollerance_v1, .perceptualTollerance_v2:
+                throw SnapshotError.snapshotMismatch(
+                    description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)",
+                    diff: differenceImage,
+                    capture: prepareSnapshot,
+                    original: prepareReferenceSnapshot
+                )
+            case .perceptualTolerance, .perceptualTolerance_v1, .perceptualTolerance_v2:
                 var deltaE: Float
                 var threshold: Int
                 
                 switch strategy {
-                case .perceptualTollerance(threshold: let threshold_value, deltaE: let value):
+                case .perceptualTolerance(threshold: let threshold_value, deltaE: let value):
                     threshold = threshold_value
                     deltaE = value
-                case .perceptualTollerance_v1(threshold: let threshold_value, perceptualPrecision: let perceptualPrecision):
+                case .perceptualTolerance_v1(threshold: let threshold_value, perceptualPrecision: let perceptualPrecision):
                     threshold = threshold_value
                     deltaE = (1 - perceptualPrecision) * 100
-                case .perceptualTollerance_v2(precission: let precission, perceptualPrecision: let perceptualPrecision):
+                case .perceptualTolerance_v2(precision: let precision, perceptualPrecision: let perceptualPrecision):
                     let pixelsCount = Float(referenceSnapshot.size.width * referenceSnapshot.size.height)
-                    let accepted = pixelsCount * precission
-                    threshold = Int(pixelsCount - (accepted >= 1.0 ? accepted : pixelsCount))
+                    /// Determine how many pixels must match according to the required precision (e.g., 0.2 for 20%).
+                    let accepted = Int(pixelsCount * precision)
+                    /// The threshold is the number of pixels allowed to differ (i.e., we can ignore this many mismatches).
+                    /// If the required number of matching pixels (accepted) is at least 1, we allow all other pixels to differ:
+                    /// threshold = total pixels - required matches.
+                    /// However, if accepted < 1 (e.g., precision 0.2 on a 4‑pixel image → 0.8, truncated to 0),
+                    /// we cannot require even a single matching pixel, so threshold is set to the total pixel count,
+                    /// effectively allowing all pixels to differ and making the test pass unconditionally.
+                    threshold = Int(pixelsCount) - (accepted >= 1 ? accepted : 0)
                     deltaE = (1 - perceptualPrecision) * 100
                 default:
                     threshold = 0
@@ -315,14 +363,24 @@ public func assertSnapshot(
                 let differenceImage = try diffImage()
                 
                 guard differenceRecord else {
-                    throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).", diff: differenceImage)
+                    throw SnapshotError.snapshotMismatch(
+                        description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).",
+                        diff: differenceImage,
+                        capture: prepareSnapshot,
+                        original: prepareReferenceSnapshot
+                    )
                 }
                 
                 try differenceImage
                     .data()
                     .save(in: differenceURL)
                 
-                throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)", diff: differenceImage)
+                throw SnapshotError.snapshotMismatch(
+                    description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)",
+                    diff: differenceImage,
+                    capture: prepareSnapshot,
+                    original: prepareReferenceSnapshot
+                )
             case .combined(threshold: let threshold, clusterSize: let clusterSize, deltaE: let deltaE):
                 let combinedKernel = try ClusterKernel.init(
                     with: Kernel.Configuration(
@@ -350,35 +408,66 @@ public func assertSnapshot(
                 let differenceImage = UIImage(cgImage: differenceCGImage)
                 
                 guard differenceRecord else {
-                    throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).", diff: differenceImage)
+                    throw SnapshotError.snapshotMismatch(
+                        description: "Threshold exceeded: current difference (\(difference)) is greater than the specified threshold (\(threshold)).",
+                        diff: differenceImage,
+                        capture: prepareSnapshot,
+                        original: prepareReferenceSnapshot
+                    )
                 }
                 
                 try differenceImage.data()
                     .save(in: differenceURL)
                 
-                throw SnapshotError.snapshotMismatch(description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)", diff: differenceImage)
+                throw SnapshotError.snapshotMismatch(
+                    description: "Threshold exceeded: current difference (\(difference) pixels) is greater than the specified threshold (\(threshold)). Difference image save to \(differenceURL)",
+                    diff: differenceImage,
+                    capture: prepareSnapshot,
+                    original: prepareReferenceSnapshot
+                )
             }
         } catch {
             guard let snapshotError = error as? SnapshotError else {
                 return XCTFail("Failed with unknown error: \(error)", file: file, line: line)
             }
-            
+
             switch snapshotError {
-            case .snapshotMismatch(let description, let diffImage):
-                XCTContext.runActivity(named: "Attached Recorded Snapshot") { activity in
-                    let attachment = XCTAttachment(image: diffImage, quality: .medium)
-                    attachment.name = "Screenshot mismatch diff"
-                    attachment.lifetime = .keepAlways
-                    activity.add(attachment)
+            case .snapshotMismatch(let description, let diffImage, let captureImage, let originalImage):
+                if failureRecord {
+                    do { try UIImage(cgImage: captureImage).data().save(in: referenceURL) }
+                    catch { XCTFail("failureRecord: Failed write referenceImage error: \(error)", file: file, line: line) }
+                    return
                 }
-                
+
+                XCTContext.runActivity(named: "Attach snapshots") { activity in
+                    let captureUIImage = UIImage(cgImage: captureImage)
+                    let originalUIImage = UIImage(cgImage: originalImage)
+
+                    let diffAttachment = XCTAttachment(image: diffImage, quality: .medium)
+                    diffAttachment.name = "Screenshot mismatch diff"
+                    diffAttachment.lifetime = .keepAlways
+                    activity.add(diffAttachment)
+                    
+                    let captureAttachment = XCTAttachment(image: captureUIImage, quality: .medium)
+                    captureAttachment.name = "Screenshot actual (capture)"
+                    captureAttachment.lifetime = .keepAlways
+                    activity.add(captureAttachment)
+                    
+                    let originalAttachment = XCTAttachment(image: originalUIImage, quality: .medium)
+                    originalAttachment.name = "Screenshot reference (original)"
+                    originalAttachment.lifetime = .keepAlways
+                    activity.add(originalAttachment)
+                }
+
                 XCTFail("Snapshot mismatch: \(description)", file: file, line: line)
-            case .scaleDifference,
-                    .failedToCreateCGImage,
-                    .referenceImageNotFound,
-                    .failedToPrepareCGImage,
-                    .error,
-                    .snapshotsSizeDoesNotEqual:
+            case .failedToCreateCGImage, .failedToPrepareCGImage, .error:
+                XCTFail("Failed with other 'SnapshotError' error: \(error)", file: file, line: line)
+            case .scaleDifference(_, let capture), .referenceImageNotFound(_, let capture), .snapshotsSizeDoesNotEqual(_, let capture):
+                if failureRecord {
+                    do { try UIImage(cgImage: capture).data().save(in: referenceURL) }
+                    catch { XCTFail("failureRecord: Failed write referenceImage error: \(error)", file: file, line: line) }
+                    return
+                }
                 XCTFail("Failed with other 'SnapshotError' error: \(error)", file: file, line: line)
             }
         }
@@ -408,43 +497,43 @@ func validationInput(_ screen: (size: CGSize, scale: Int), strategy: Strategy) -
         return "The cluster size for the .cluster strategy does not fall within the valid range (1 to 7). Got \(clusterSize)."
     }
     
-    if case .perceptualTollerance(let threshold, _) = strategy, threshold < 0 {
+    if case .perceptualTolerance(let threshold, _) = strategy, threshold < 0 {
         return "The threshold \(threshold) value for the .perceptualTollerance strategy cannot be less than zero."
     }
     
-    if case .perceptualTollerance(_, let deltaE) = strategy, deltaE < 0.0 {
+    if case .perceptualTolerance(_, let deltaE) = strategy, deltaE < 0.0 {
         return "The deltaE \(deltaE) value for the .perceptualTollerance strategy cannot be less than zero."
     }
     
-    if case .perceptualTollerance(_, let deltaE) = strategy, deltaE > 100.0 {
+    if case .perceptualTolerance(_, let deltaE) = strategy, deltaE > 100.0 {
         return "The deltaE \(deltaE) value for the .perceptualTollerance strategy cannot be great than 100."
     }
     
-    if case .perceptualTollerance_v1(let threshold, _) = strategy, threshold < 0 {
+    if case .perceptualTolerance_v1(let threshold, _) = strategy, threshold < 0 {
         return "The threshold \(threshold) value for the .perceptualTollerance_v1 strategy cannot be less than zero."
     }
     
-    if case .perceptualTollerance_v1(_, let perceptualPrecision) = strategy, perceptualPrecision < 0.0 {
+    if case .perceptualTolerance_v1(_, let perceptualPrecision) = strategy, perceptualPrecision < 0.0 {
         return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v1 strategy cannot be less than zero."
     }
     
-    if case .perceptualTollerance_v1(_, let perceptualPrecision) = strategy, perceptualPrecision > 1.0 {
+    if case .perceptualTolerance_v1(_, let perceptualPrecision) = strategy, perceptualPrecision > 1.0 {
         return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v1 strategy cannot be great than 1.0"
     }
     
-    if case .perceptualTollerance_v2(let precission, _) = strategy, precission < 0.0 {
-        return "The precission \(precission) value for the .perceptualTollerance_v2 strategy cannot be less than zero."
+    if case .perceptualTolerance_v2(let precision, _) = strategy, precision < 0.0 {
+        return "The precision \(precision) value for the .perceptualTollerance_v2 strategy cannot be less than zero."
     }
     
-    if case .perceptualTollerance_v2(let precission, _) = strategy, precission > 1.0 {
-        return "The precission \(precission) value for the .perceptualTollerance_v2 strategy cannot be great than 1."
+    if case .perceptualTolerance_v2(let precision, _) = strategy, precision > 1.0 {
+        return "The precision \(precision) value for the .perceptualTollerance_v2 strategy cannot be great than 1."
     }
     
-    if case .perceptualTollerance_v2(_, let perceptualPrecision) = strategy, perceptualPrecision > 1.0 {
+    if case .perceptualTolerance_v2(_, let perceptualPrecision) = strategy, perceptualPrecision > 1.0 {
         return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v2 strategy cannot be great than 1.0"
     }
     
-    if case .perceptualTollerance_v2(_, let perceptualPrecision) = strategy, perceptualPrecision < 0.0 {
+    if case .perceptualTolerance_v2(_, let perceptualPrecision) = strategy, perceptualPrecision < 0.0 {
         return "The perceptualPrecision \(perceptualPrecision) value for the .perceptualTollerance_v2 strategy cannot be less than 0.0"
     }
     
@@ -452,12 +541,36 @@ func validationInput(_ screen: (size: CGSize, scale: Int), strategy: Strategy) -
 }
 
 enum SnapshotError: Error {
-    case snapshotMismatch(description: String, diff: UIImage)
-    case snapshotsSizeDoesNotEqual(description: String)
-    case scaleDifference(description: String)
+    /// The rendered snapshot did not match the reference.
+    ///
+    /// - Parameters:
+    ///   - description: Detailed error message explaining why the mismatch occurred.
+    ///   - diff: A visual diff image highlighting (MismatchColor)  mismatched areas  (typically colored highlights on the rendered image).
+    ///   - capture: The rendered snapshot captured during the test (i.e., current/actual image).
+    ///   - original: The reference snapshot stored on disk (i.e., expected image).
+    case snapshotMismatch(
+        description: String,
+        diff: UIImage,
+        capture: CGImage,
+        original: CGImage
+    )
+
+    /// The rendered snapshot and reference have different sizes (width or height).
+    case snapshotsSizeDoesNotEqual(description: String, capture: CGImage)
+
+    /// The rendered snapshot and reference have different pixel scales (e.g., 2x vs. 3x).
+    case scaleDifference(description: String, capture: CGImage)
+
+    /// Failed to create a CGImage from the provided UIImage (e.g., invalid image).
     case failedToCreateCGImage(snapshotName: String)
-    case referenceImageNotFound(snapshotName: String)
+
+    /// The reference snapshot file was not found at the expected path.
+    case referenceImageNotFound(snapshotName: String, capture: CGImage)
+
+    /// Failed to prepare (e.g., normalize color space, create bitmap context) for comparison.
     case failedToPrepareCGImage(description: String)
+
+    /// A generic/internal error occurred during snapshot testing.
     case error(description: String)
 }
 
@@ -469,7 +582,6 @@ struct Snapshot {
         inDirectory directoryUrl: URL
     ) -> URL {
         directoryUrl
-            .appendingPathComponent("Snapshots")
             .appendingPathComponent(className)
             .appendingPathComponent(testName)
             .appendingPathExtension("png")
@@ -486,14 +598,6 @@ struct Snapshot {
             .appendingPathComponent(testName)
             .appendingPathExtension("diff")
             .appendingPathExtension("png")
-    }
-    
-    static func createReferenceSnapshot(from url: URL) throws -> UIImage {
-        guard let referenceSnapshotImage = UIImage(contentsOfFile: url.path) else {
-            throw SnapshotError.referenceImageNotFound(snapshotName: url.lastPathComponent)
-        }
-        
-        return referenceSnapshotImage
     }
     
     private static func set(traits: UITraitCollection, for view: UIView) {
@@ -528,19 +632,23 @@ struct Snapshot {
             view.layer.render(in: context.cgContext)
         }
         
+        guard let cgImage = image.cgImage else {
+            throw SnapshotError.failedToCreateCGImage(snapshotName: "Failure create cgImage in renderImage(view:_) ")
+        }
+        
         guard image.scale == CGFloat(screen.scale) else {
-            throw SnapshotError.scaleDifference(description: "The scale of the selected simulator device (\(image.scale)) does not match the scale of the current selected scale: \(screen.scale). This mismatch may cause rendering differences")
+            throw SnapshotError.scaleDifference(description: "The scale of the selected simulator device (\(image.scale)) does not match the scale of the current selected scale: \(screen.scale). This mismatch may cause rendering differences", capture: cgImage)
         }
         
         return image
     }
     
     static func renderImage(view: UIView, traits: [UITraitCollection]? = nil) throws -> UIImage {
+        view.layoutIfNeeded()
+
         guard view.frame != .zero else {
             throw SnapshotError.error(description: "The frame of the view is zero, which may indicate that it has not been properly initialized.")
         }
-        
-        view.layoutIfNeeded()
         
         if let traits {
             set(traits: UITraitCollection(traitsFrom: traits), for: view)
@@ -668,9 +776,9 @@ public enum Strategy {
     case combined(threshold: Int, clusterSize: Int, deltaE: Float)
     
     /// DeltaE2000 tollerance
-    case perceptualTollerance(threshold: Int = 0, deltaE: Float = 0.0)
-    case perceptualTollerance_v1(threshold: Int = 0, perceptualPrecision: Float = 1.0)
-    case perceptualTollerance_v2(precission: Float = 1.0, perceptualPrecision: Float = 1.0)
+    case perceptualTolerance(threshold: Int = 0, deltaE: Float = 0.0)
+    case perceptualTolerance_v1(threshold: Int = 0, perceptualPrecision: Float = 1.0)
+    case perceptualTolerance_v2(precision: Float = 1.0, perceptualPrecision: Float = 1.0)
 }
 
 public struct SnapshotConfiguration{
